@@ -9,7 +9,8 @@ import (
 	"time"
 	"github.com/xuri/excelize/v2"
 	"golang.org/x/net/html"
-
+	myhtml "html"
+	"unicode"
 )
 
 type shop struct {
@@ -91,6 +92,24 @@ func CloseHTMLTags(input string) string {
 	return input
 }
 
+
+func extractIDFromString(input string) string {
+	var digits []rune
+
+	for _, char := range input {
+		if unicode.IsDigit(char) {
+			digits = append(digits, char)
+		}
+	}
+
+	if len(digits) > 11 {
+		digits = digits[:11]
+	}
+
+	return string(digits)
+}
+
+
 func main() {
 	// Открытие файла Excel
 	f, err := excelize.OpenFile("products.xlsx")
@@ -124,7 +143,7 @@ func main() {
 	for _, row := range rows[1:] {
 		// Создание оффера
 		offer := Offer{
-			ID:         row[0],
+			ID:         extractIDFromString(row[0]),
 			Available:  true,
 			URL:        row[1],
 			Price:      row[11],
@@ -133,8 +152,8 @@ func main() {
 			Pictures:   []Picture{},
 			Pickup:     false,
 			Delivery:   true,
-			Name:       row[3],
-			NameUkr:    row[4],
+			Name:       html.EscapeString(row[3]),
+			NameUkr:    html.EscapeString(row[4]),
 			Vendor:     "",
 			VendorCode: row[27],
 			Description: row[8],
@@ -142,16 +161,37 @@ func main() {
 		
 		}
 		
-		
+		// OHNEDICHKA !!!!
+	
 		offer.Description = strings.Replace(offer.Description, `</td>`, ``, -1)
 		offer.DescrUkr = strings.Replace(offer.DescrUkr, `</td>`, ``, -1)
+		
+		offer.Description = strings.Replace(offer.Description, `/ td>`, ``, -1)
+		offer.DescrUkr = strings.Replace(offer.DescrUkr, `/ td>`, ``, -1)
+		
+		offer.Description = strings.Replace(offer.Description, `/TD>`, ``, -1)
+		offer.DescrUkr = strings.Replace(offer.DescrUkr, `/TD>`, ``, -1)
+		
+		offer.Description = strings.Replace(offer.Description, `</Td>`, ``, -1)
+		offer.DescrUkr = strings.Replace(offer.DescrUkr, `</Td>`, ``, -1)
 
-		offer.DescrUkr = strings.ReplaceAll(offer.DescrUkr, "&#xA;", " ")
-		offer.Description = strings.ReplaceAll(offer.Description, "&#xA;", " ")
+		offer.Description = strings.Replace(offer.Description, `< / td>`, ``, -1)
+		offer.DescrUkr = strings.Replace(offer.DescrUkr, `< / td>`, ``, -1)
 
+		offer.Description = strings.Replace(offer.Description, `< / Td>`, ``, -1)
+		offer.DescrUkr = strings.Replace(offer.DescrUkr, `< / Td>`, ``, -1)		
+ 
+		offer.DescrUkr = strings.ReplaceAll(offer.DescrUkr, "&#xA;", "\r\n")
+		offer.Description = strings.ReplaceAll(offer.Description, "&#xA;", "\r\n")
+		
+		offer.DescrUkr = strings.ReplaceAll(offer.DescrUkr, "<", " ")
+		offer.Description = strings.ReplaceAll(offer.Description, "<", " ")	
 
-
-offer.Description  = html.UnescapeString(offer.Description )
+		offer.DescrUkr = strings.ReplaceAll(offer.DescrUkr, "&", " and ")
+		offer.Description = strings.ReplaceAll(offer.Description, "&", " and ")
+		
+		offer.DescrUkr = strings.ReplaceAll(offer.DescrUkr, "&amp;", " and ")
+		offer.Description = strings.ReplaceAll(offer.Description, "&amp;", " and ")	
 
 		// Добавление изображений
 		pictures := row[17]
@@ -178,13 +218,13 @@ offer.Description  = html.UnescapeString(offer.Description )
 	for _, row := range rows[1:] {
 		// Создание категории
 		category := Category{
-			ID:   row[4],
+			ID:   extractIDFromString(row[4]),
 			Name: row[3],
 		}
 
 		// Добавление родительской категории, если есть
 		if len(row) > 6 && row[6] != "" {
-			category.ParentID = row[6]
+			category.ParentID = extractIDFromString(row[6])
 		}
 
 		// Добавление категории в список категорий
@@ -192,13 +232,14 @@ offer.Description  = html.UnescapeString(offer.Description )
 	}
 
 	// Генерация XML
-		output, err := xml.MarshalIndent(shop, "", "  ")
+	output, err := xml.MarshalIndent(shop, "", "  ")
 	if err != nil {
 		log.Fatal(err)
 	}
 	
 	xmlString := string(output)
 	xmlString = strings.ReplaceAll(xmlString, "&#xA;", "\n")
+	xmlString = myhtml.UnescapeString(xmlString)
 
 	// Запись XML-файла
 	header := `<?xml version="1.0" encoding="utf-8"?>
@@ -209,7 +250,7 @@ offer.Description  = html.UnescapeString(offer.Description )
 
 	footer := "\n</yml_catalog>"
 
-	xmlData := []byte(header + fmt.Sprintf("<yml_catalog date=\"%s\">\n", date) + string(output) + footer)
+	xmlData := []byte(header + fmt.Sprintf("<yml_catalog date=\"%s\">\n", date) + string(xmlString) + footer)
 
 	err = ioutil.WriteFile("output.xml", xmlData, 0644)
 	if err != nil {
